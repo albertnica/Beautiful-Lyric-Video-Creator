@@ -108,10 +108,10 @@ This project requires an NVIDIA GPU and the CUDA Toolkit.
 Here is a comparison between the previous version and the current enhanced version.
 
 ### **Previous Version (v0.0)**
-<video src="gh/comparison_old.mp4" width="900" controls></video>
+<video src="https://github.com/albertnica/Beautiful-Lyric-Video-Creator/raw/main/gh/comparison_old.mp4" width="900" controls></video>
 
 ### **Current Version (v1.0)**
-<video src="gh/comparison_new.mp4" width="900" controls></video>
+<video src="https://github.com/albertnica/Beautiful-Lyric-Video-Creator/raw/main/gh/comparison_new.mp4" width="900" controls></video>
 
 ---
 
