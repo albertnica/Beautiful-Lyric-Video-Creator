@@ -105,7 +105,7 @@ This project requires an NVIDIA GPU and the CUDA Toolkit.
 
 ## Video Comparison
 
-Here is a comparison between the previous version and the current enhanced version.
+Here is a comparison between the previous version and the current enhanced version. Full render on [this .mp4](gh).
 
 ### **Previous Version (v0.0)**
 ![0.0](gh/comparison_old.gif)
