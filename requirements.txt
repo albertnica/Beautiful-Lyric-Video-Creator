@@ -1,0 +1,4 @@
+cupy-cuda13x
+mutagen
+opencv-python
+# torch -> best to install through their webpage

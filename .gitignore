@@ -2,3 +2,5 @@ lyrics
 output
 songs
 temp
+.venv
+.mypy_cache

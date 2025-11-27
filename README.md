@@ -1,66 +1,133 @@
-# Beautiful animated music video with lyrics
+# Beautiful Lyric Video Creator
 
-## Project Overview
-
-This tool automatically generates music videos with album cover animations and synchronized lyrics (if available, LRC format). It processes a batch of audio files (FLAC format, revise code to change) in numerical order, applies GPU-accelerated effects, and produces MP4 videos with a smooth zooming background. To use it just just add the music files to the "songs" folder and the synchronized lyrics to the "lyrics" folders and run [the notebook](BLVF.ipynb).
+A high-performance, GPU-accelerated tool to automatically generate aesthetic music videos with synchronized lyrics. This project leverages CUDA for fast image processing and FFmpeg for robust video encoding.
 
 ## Key Features
 
-- **GPU-Accelerated Processing**: Utilizes CUDA/CuPy kernels for fast image blending and zoom animations.
-- **Dual Modes**:
-  - **With Lyrics**: Side-aligned cover with synchronized subtitle-style lyrics.
-  - **Without Lyrics**: Centered cover, enlarged by 20%, with decorative frame and text overlay.
-- **Batch Workflow**: Scans a folder of numbered audio files, skips existing outputs, and reports progress and statistics.
-- **High Performance**: Ping-pong buffers, prefetching, thread pools, and hardware NVENC encoding.
-- **Assembling**: To merge all generated outputs into a single file, it is recommended to use `LosslessCut` program.
+- **GPU Acceleration**: Uses CuPy and custom CUDA kernels for real-time visual effects (blur, glow, blending).
+- **Synchronized Lyrics**: Parses `.lrc` files to display lyrics in sync with the audio.
+- **Dynamic Visuals**:
+  - **With Lyrics**: Side-aligned cover art with a beautiful, glowing lyric display.
+  - **Without Lyrics**: Centered, enlarged cover art with a decorative frame and metadata text.
+- **Batch Processing**: Automatically scans the `songs` folder and processes all tracks in numerical order.
+- **Smart Color Matching**: Analyzes the album cover to generate a matching background and glow effects.
 
-## Variants
+---
 
-1. **Cover-Only Mode**  
-   - For tracks lacking `.lrc` files.  
-   - Displays a centered, enhanced cover with title/artist text below.
-2. **Lyrics Mode**  
-   - For tracks with synchronized `.lrc` lyrics.
-   - Renders up to five lines of lyrics per frame, highlighting the active line.
+## Prerequisites
+
+Before running the script, you must ensure that **FFmpeg** and **CUDA** (v13 recommended) are properly installed on your system.
+
+### 1. FFmpeg Installation
+
+FFmpeg is required for audio analysis and video encoding.
+
+1.  **Download**: Go to the [FFmpeg builds page](https://gyan.dev/ffmpeg/builds/) (or use chocolately) and download the "release-full" build.
+2.  **Extract**: Unzip the downloaded file to a permanent location, e.g., `C:\ffmpeg`.
+3.  **Add to Path**:
+    -   Search for "Edit the system environment variables" in Windows Start.
+    -   Click **Environment Variables**.
+    -   Under **System variables**, find the `Path` variable and click **Edit**.
+    -   Click **New** and add the path to the `bin` folder inside your FFmpeg directory (e.g., `C:\ffmpeg\bin`).
+    -   Click **OK** to save.
+4.  **Verify**: Open a new terminal and run:
+    ```bash
+    ffmpeg -version
+    ```
+
+### 2. CUDA Toolkit Installation
+
+This project requires an NVIDIA GPU and the CUDA Toolkit.
+
+1.  **Check GPU**: Ensure you have an NVIDIA GPU compatible with CUDA.
+2.  **Download**: Visit the [NVIDIA CUDA Toolkit Archive](https://developer.nvidia.com/cuda-toolkit-archive).
+3.  **Select Version**: Choose **CUDA 13.x** (recommended).
+4.  **Install**: Run the installer and follow the on-screen instructions. Select "Express" installation.
+5.  **Verify**: Open a terminal and run:
+    ```bash
+    nvcc --version
+    ```
+
+---
+
+## Installation
+
+1.  **Clone the Repository**
+    ```bash
+    git clone https://github.com/albertnica/Beautiful-Lyric-Video-Creator
+    cd Beautiful-Lyric-Video-Creator
+    ```
+
+2.  **Create a Virtual Environment** (Recommended)
+    ```bash
+    python -m venv venv
+    venv\Scripts\activate
+    ```
+
+3.  **Install Dependencies**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+    > **Note on CuPy**: The `requirements.txt` includes `cupy-cuda13x` by default. If you installed, for example, CUDA 12, please uninstall it and install `cupy-cuda12x` instead:
+    > ```bash
+    > pip uninstall cupy-cuda13x
+    > pip install cupy-cuda12x
+    > ```
+
+---
+
+## Usage
+
+1.  **Prepare Folders**:
+    -   `songs/`: Place your audio files here (`.flac` is mandatory).
+    -   `lyrics/`: Place your `.lrc` files here. The lyrics filenames must match the audio filenames.
+
+2.  **Run the Script**:
+    ```bash
+    python main.py
+    ```
+
+3.  **Output**:
+    -   Generated videos will be saved in the `output/` folder.
+
+---
 
 ## Screenshots
 
-- **Cover-Only Mode** 
+### **Cover-Only Mode**
+  <img src="gh/cover_only.png" width="900" alt="Cover Only Example">
 
-  ![Cover Only Example](rm/cover_only.png)
+### **Lyrics Mode**
+  <img src="gh/lyrics_mode.png" width="900" alt="Lyrics Mode Example">
 
-- **Lyrics Mode**
+---
 
-  ![Lyrics Mode Example](rm/lyrics_mode.png)
+## Video Comparison
 
-## Installation
+Here is a comparison between the previous version and the current enhanced version.
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/albertnica/BeautifulLyricVideoForge
-   cd BeautifulLyricVideoForge
+### **Previous Version (v0.0)**
+<video src="gh/comparison_old.mp4" width="900" controls></video>
 
-2. Create and activate a virtual environment:
-   ```bash
-   python3.11 -m venv BLVF
-   BLVF\Scripts\activate
+### **Current Version (v1.0)**
+<video src="gh/comparison_new.mp4" width="900" controls></video>
 
-3. Install Python dependencies:
-   ```bash
-   pip install -r requirements.txt
+---
 
-   # Beautiful animated music video with lyrics
+## Changelog v1.0
 
-## Lyrics Retriever
+### Major Improvements
 
-Automatically download lyrics from Genius using their API (you must create an API client on the Genius website and add your credentials to the script). The lyrics are then synchronized using OpenAI’s Whisper with GPU acceleration. This is intended as a fallback when LRC files are not available via the “LRCGET” program, which remains the preferred option.
+-   **Performance Boost**: Drastic reduction in processing time (from ~1 min/song to ~25 sec/song on a 3060Ti) while improving video quality.
+-   **Enhanced Visuals**: Added glow effects, dynamic background with spinning cover and better blending.
+-   **Lyrics Engine Overhaul**: Improved font rendering, spacing and alignment. Implemented an automatic line-splitting system for long lyrics to ensure readability.
+-   **Customization**: Expanded configuration options for personalization.
+-   **Assets**: Added support for custom icons (title, artist, album).
+-   **Documentation**: Improved documentation and readablity of the code.
 
-## Installation
+---
 
-1. **Install Python dependencies**  
-   ```bash
-   pip install -r requirements_l.txt
+## For your information
 
-2. Install PyTorch with CUDA support (adjust CUDA version as needed):
-   ```bash
-   pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu129
+This script hardly realies on .FLAC files cover art (metadata) and .LRC files. I have other works that focuse on adding this features to your music library and they can be found under the [Music-Metadata-Handler](https://github.com/albertnica/Music-Metadata-Handler) and [Automatic-Lyrics-Synchronizer](https://github.com/albertnica/Automatic-Lyrics-Synchronizer) repositories.
