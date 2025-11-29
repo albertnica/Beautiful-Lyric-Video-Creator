@@ -1,6 +1,9 @@
+__pycache__
+
+.venv
+.mypy_cache
+
 lyrics
 output
 songs
 temp
-.venv
-.mypy_cache

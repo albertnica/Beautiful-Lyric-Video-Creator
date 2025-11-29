@@ -1,18 +1,19 @@
-import glob  # File pattern matching
-import os    # Operating system interfaces (path, file ops)
-import re    # Regular expressions for text parsing
-import shutil # High-level file operations (copy, delete)
-import subprocess # Spawning new processes (ffmpeg, ffprobe)
-import time  # Time access and conversions
-from itertools import cycle # Infinite iterator for buffer cycling
-from math import sin, pi, ceil, isinf # Math functions for animations
-from queue import Queue # Thread-safe queue for producer-consumer
-from threading import Thread # Thread-based parallelism
+import glob
+import os
+import re
+import shutil
+import subprocess
+import time
+from itertools import cycle
+from math import sin, pi, ceil, isinf
+from queue import Queue, Empty
+from threading import Thread
 
-import cv2  # OpenCV for image processing
-import numpy as np # Numerical operations on CPU
-from mutagen.flac import FLAC # Handling FLAC audio metadata
-import unicodedata # Unicode character database for text sanitization
+import cv2
+import numpy as np
+from mutagen.flac import FLAC
+import unicodedata
+from datetime import datetime
 
 # ------------------------- Configuration (tunable constants) -------------------------
 # All configurable parameters below — change these to adjust behavior/visuals.
@@ -34,9 +35,9 @@ MAX_LYRICS_LENGHT = 33                 # Max length of lyrics line before forcin
 
 # Glow / visual tuning
 GLOW_BLUR_KSIZE = 111                  # Kernel size for Gaussian blur used in glow maps (must be odd). Larger = softer glow.
-GLOW_INTENSITY_BASE = 0.36             # Base glow intensity for lyric overlays (pulsating adds to this)
+GLOW_INTENSITY_BASE = 0.5              # Base glow intensity for lyric overlays (pulsating adds to this)
 BLUR_STRENGTH = 501                    # Background blur strength (kernel size). Very high for abstract background.
-FIXED_TEXT_GLOW_INTENSITY = 0.3        # Alpha/brightness for fixed elements: title, artist, album/year, dot and frame
+FIXED_TEXT_GLOW_INTENSITY = 0.5        # Alpha/brightness for fixed elements: title, artist, album/year, dot and frame
 ASSETS_GLOW_INTENSITY = 0.5            # Glow intensity for assets (icons)
 GLOW_PULSE_AMP = 0.04                  # Amplitude of glow pulsation for lyric highlights (how much it throbs)
 GLOW_PULSE_FREQ = 0.5                  # Frequency (Hz) of glow pulsation (speed of throb)
@@ -54,11 +55,12 @@ RANDOM_CANDIDATES_MIN = 40             # Minimum candidates required from random
 SAMPLE_GRID = 120                      # Downsample size used when computing dominant color (speed optimization)
 
 MIN_GLOW_SAT = 20                      # Ensure glow color has at least this saturation (avoid white/gray glow)
-MIN_GLOW_VAL = 60                      # Ensure glow color has at least this brightness/value (avoid dark glow)
+MIN_GLOW_VAL = 80                      # Ensure glow color has at least this brightness/value (avoid dark glow)
 
-DEBUG_TRIGGER = False                   # Debug toggle (when True prints debug lines prefixed with [DEBUG])
+DEBUG_TRIGGER = False                  # Debug toggle (when True prints debug lines prefixed with [DEBUG])
 
 # -------------------------------------------------------------------------------------
+
 
 
 
@@ -438,9 +440,9 @@ class GPUVideoRenderer:
             if (x >= frame_w || y >= frame_h) return;
 
             // Center of rotation: Bottom-Right of the frame (or center, depending on effect)
-            // Here we use the frame center for rotation
-            float cx = (float)frame_w * 0.5f;
-            float cy = (float)frame_h * 0.5f;
+            // Here we use the frame bottom-right for rotation as requested
+            float cx = (float)frame_w;
+            float cy = (float)frame_h;
 
             // Vector from center to pixel
             float dx = (float)x - cx;
@@ -1379,22 +1381,34 @@ class GPUVideoRenderer:
             # Background thread to write frames to FFmpeg
             # This allows the main thread to continue issuing GPU commands without waiting for I/O
             def writer_thread_fn():
-                while True:
-                    item = frame_queue.get()
-                    if item is None:
-                        break
-                    buf_idx, event = item
-                    # Wait for the GPU copy to complete before writing
-                    if event is not None:
+                try:
+                    while True:
+                        item = frame_queue.get()
+                        if item is None:
+                            break
+                        buf_idx, event = item
+                        # Wait for the GPU copy to complete before writing
+                        if event is not None:
+                            try:
+                                event.synchronize()
+                            except Exception:
+                                pass
+                        arr = self.ping_pong_arrays[buf_idx]
                         try:
-                            event.synchronize()
-                        except Exception:
-                            pass
-                    arr = self.ping_pong_arrays[buf_idx]
-                    ffmpeg_process.stdin.write(memoryview(arr))
-                    frame_queue.task_done()
-                    # Return buffer to pool
-                    available_buffers.put(buf_idx)
+                            ffmpeg_process.stdin.write(memoryview(arr))
+                        except BrokenPipeError:
+                            print("[ERROR] FFmpeg stdin pipe broken. FFmpeg likely crashed.")
+                            # Try to consume any remaining items to unblock main thread if it's waiting on queue?
+                            # But main thread checks for success return.
+                            # We should probably just exit the loop.
+                            frame_queue.task_done()
+                            break
+                        
+                        frame_queue.task_done()
+                        # Return buffer to pool
+                        available_buffers.put(buf_idx)
+                except Exception as e:
+                    print(f"[ERROR] Writer thread exception: {e}")
 
             writer_thread = Thread(target=writer_thread_fn, daemon=True)
             writer_thread.start()
@@ -1410,8 +1424,19 @@ class GPUVideoRenderer:
             thread_block = (BLOCK_SIZE, BLOCK_SIZE)
 
             for frame_index in range(total_frames):
+                if not writer_thread.is_alive():
+                    print("[ERROR] Writer thread is no longer alive. Stopping render.")
+                    break
+
                 # Get a free buffer (blocks if none available)
-                buf_idx = available_buffers.get()
+                try:
+                    buf_idx = available_buffers.get(timeout=2.0)
+                except Empty:
+                    if not writer_thread.is_alive():
+                        print("[ERROR] Writer thread died. Stopping render.")
+                        break
+                    print("[WARN] Buffer queue empty for 2s, but writer thread is alive. Retrying...")
+                    continue
                 stream = self.streams[buf_idx]
                 
                 # Issue commands to the specific CUDA stream for this buffer
@@ -1589,9 +1614,13 @@ class GPUVideoRenderer:
                     except Exception:
                         pass
 
-            # Signal writer thread to stop
-            frame_queue.put(None)
-            writer_thread.join(timeout=60.0)
+            # Signal writer thread to stop if it's still running
+            if writer_thread.is_alive():
+                try:
+                    frame_queue.put(None, timeout=1.0)
+                    writer_thread.join(timeout=60.0)
+                except Exception:
+                    pass
             
             # Close FFmpeg
             try:
@@ -1602,6 +1631,11 @@ class GPUVideoRenderer:
 
             elapsed = time.time() - start_time
             print("[INFO]", "Completed in {:.2f}s -> {:.2f} FPS".format(elapsed, processed_count / elapsed if processed_count>0 else 0))
+            
+            if processed_count < total_frames:
+                print(f"[WARN] Render incomplete: {processed_count}/{total_frames} frames. Marking as failed.")
+                return False
+                
             return True
         except Exception as e:
             print("Rendering error:", e)
@@ -1724,71 +1758,85 @@ def main():
     total_start = time.time()
     processed = failed = skipped = 0
     
-    try:
-        for i, audio_file in enumerate(music_files, 1):
-            print("=" * 60)
-            print(f"Processing file {i}/{len(music_files)}")
-            
-            lrc_file = find_lyrics_file(audio_file)
-            base = os.path.splitext(os.path.basename(audio_file))[0]
-            out_path = os.path.join(OUTPUT_FOLDER, f"{base}.mp4")
-            
-            if os.path.exists(out_path):
-                print("Output already exists:", out_path)
-                skipped += 1
-                continue
-                
-            success = renderer.render_video(audio_file, lrc_file, out_path)
-            
-            if success:
-                processed += 1
-                print("[INFO]", "Video generated:", out_path)
-            else:
-                failed += 1
-                print("Failed to render:", os.path.basename(audio_file))
-                
-            # Aggressive cleanup between videos to prevent VRAM fragmentation
-            if hasattr(renderer, 'zoom_cache'):
-                renderer.zoom_cache.clear()
-            if hasattr(renderer, 'memory_pool'):
-                try:
-                    renderer.memory_pool.free_all_blocks()
-                except Exception:
-                    pass
-                    
-            elapsed_total = time.time() - total_start
-            avg_time = elapsed_total / i if i > 0 else 0
-            remaining = len(music_files) - i
-            eta_total = remaining * avg_time
-            
-            print("[INFO]", f"Overall: {i}/{len(music_files)} processed - success {processed}, skipped {skipped}, failed {failed}")
-            if remaining > 0:
-                print("[INFO]", f"ETA remaining: {eta_total/60:.1f} minutes")
-                
-    except KeyboardInterrupt:
-        print("Processing interrupted by user.")
-    except Exception as e:
-        print("Critical error during batch processing:", e)
-    finally:
+    # Create log file
+    log_name = f"000 output {datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+    log_filename = os.path.join(OUTPUT_FOLDER, log_name)
+    
+    with open(log_filename, "w", encoding="utf-8") as log_file:
+        log_file.write(f"Execution Log - {datetime.now()}\n")
+        log_file.write("========================================\n")
+
         try:
-            if 'renderer' in locals():
-                renderer.cleanup()
-        except Exception:
-            pass
-        
-        total_elapsed = time.time() - total_start
-        print("=" * 60)
-        print("FINAL SUMMARY")
-        print("=" * 60)
-        print(f"Total time: {total_elapsed/60:.1f} minutes")
-        print(f"Files found: {len(music_files)}")
-        print(f"Videos generated: {processed}")
-        print(f"Already existed: {skipped}")
-        print(f"Failed: {failed}")
-        if processed > 0:
-            print(f"Average time per video: {total_elapsed/processed:.1f}s")
-            print("Videos written to:", os.path.abspath(OUTPUT_FOLDER))
-        print("Processing finished.")
+            for i, audio_file in enumerate(music_files, 1):
+                print("=" * 60)
+                print(f"Processing file {i}/{len(music_files)}")
+                
+                lrc_file = find_lyrics_file(audio_file)
+                base = os.path.splitext(os.path.basename(audio_file))[0]
+                out_path = os.path.join(OUTPUT_FOLDER, f"{base}.mp4")
+                
+                if os.path.exists(out_path):
+                    print("Output already exists:", out_path)
+                    skipped += 1
+                    log_file.write(f"[ALREADY PROCESSED] {os.path.basename(audio_file)}\n")
+                    log_file.flush()
+                    continue
+                    
+                success = renderer.render_video(audio_file, lrc_file, out_path)
+                
+                if success:
+                    processed += 1
+                    print("[INFO]", "Video generated:", out_path)
+                    log_file.write(f"[PROPERLY PROCESSED] {os.path.basename(audio_file)}\n")
+                else:
+                    failed += 1
+                    print("Failed to render:", os.path.basename(audio_file))
+                    log_file.write(f"[FAILED] {os.path.basename(audio_file)}\n")
+                
+                log_file.flush()
+                
+                # Aggressive cleanup between videos to prevent VRAM fragmentation
+                if hasattr(renderer, 'zoom_cache'):
+                    renderer.zoom_cache.clear()
+                if hasattr(renderer, 'memory_pool'):
+                    try:
+                        renderer.memory_pool.free_all_blocks()
+                    except Exception:
+                        pass
+                        
+                elapsed_total = time.time() - total_start
+                avg_time = elapsed_total / i if i > 0 else 0
+                remaining = len(music_files) - i
+                eta_total = remaining * avg_time
+                
+                print("[INFO]", f"Overall: {i}/{len(music_files)} processed - success {processed}, skipped {skipped}, failed {failed}")
+                if remaining > 0:
+                    print("[INFO]", f"ETA remaining: {eta_total/60:.1f} minutes")
+                
+        except KeyboardInterrupt:
+            print("Processing interrupted by user.")
+        except Exception as e:
+            print("Critical error during batch processing:", e)
+        finally:
+            try:
+                if 'renderer' in locals():
+                    renderer.cleanup()
+            except Exception:
+                pass
+            
+            total_elapsed = time.time() - total_start
+            print("=" * 60)
+            print("FINAL SUMMARY")
+            print("=" * 60)
+            print(f"Total time: {total_elapsed/60:.1f} minutes")
+            print(f"Files found: {len(music_files)}")
+            print(f"Videos generated: {processed}")
+            print(f"Already existed: {skipped}")
+            print(f"Failed: {failed}")
+            if processed > 0:
+                print(f"Average time per video: {total_elapsed/processed:.1f}s")
+                print("Videos written to:", os.path.abspath(OUTPUT_FOLDER))
+            print("Processing finished.")
 
 if __name__ == "__main__":
     import sys
