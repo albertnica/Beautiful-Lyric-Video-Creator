@@ -831,15 +831,12 @@ class GPUVideoRenderer:
                 # previous left margin was LEFT_MARGIN; we place cover at 2 * LEFT_MARGIN
                 self.cover_x = LEFT_MARGIN * 2
                 # Apply configured vertical offset for cover when lyrics are present.
-                # The user requested "+40" relative adjustment; this constant centralizes it.
                 self.cover_y = (H - new_height) // 2 - 50 -40
             else:
                 scale_factor = 1.2
                 new_height = int(800 * 0.8 * scale_factor)
                 new_width = int(w * (new_height / h))
 
-                # Reduce cover size by 10% in 'no lyrics' mode while keeping the same center.
-                # The original center is (W/2, H/2 - 70). Compute scaled size and place so center unchanged.
                 center_x = float(W) / 2.0
                 center_y = float(H) / 2.0 - 70.0
                 new_width = int(round(new_width * 0.90))
@@ -883,7 +880,7 @@ class GPUVideoRenderer:
         Also handles the placement of small icons/assets (title.png, artist.png, etc.).
         Generates a glow map for these elements.
         """
-        # Use a sans-serif Hershey font to approximate "sans sheriff"
+        # Using Hershey font to approximate Spotify font
         font = cv2.FONT_HERSHEY_SIMPLEX
         frame_thickness = 3 if has_lyrics else 6
         frame_x1 = self.cover_x - frame_thickness
@@ -1088,9 +1085,6 @@ class GPUVideoRenderer:
                     label_scale, (30, 30, 30, 255), label_thickness + 2, lineType=cv2.LINE_AA)
         cv2.putText(self.text_image, year_s, (year_x, album_y), font,
                     label_scale, (200, 200, 200, 255), label_thickness, lineType=cv2.LINE_AA)
-
-        # (removed previous generic asset placements that overlapped the cover;
-        #  assets are now placed specifically to the left of their corresponding texts)
 
         # Create glow map for fixed text
         glow_mask = np.zeros((H, W, 3), dtype=np.uint8)
@@ -1320,7 +1314,6 @@ class GPUVideoRenderer:
             self.overlay_glow_gpu_cache[k] = cp.asarray(img)
 
         # Build mapping: frame index -> list of overlay keys
-        # This allows O(1) lookup during the render loop
         for frame_index in range(total_frames):
             keys = []
             active_idx = -1
@@ -1441,7 +1434,6 @@ class GPUVideoRenderer:
                 
                 # Issue commands to the specific CUDA stream for this buffer
                 with stream:
-                    # Debug: print the cover coordinates used at render time once
                     try:
                             if not hasattr(self, '_render_coords_logged'):
                                 debug_print(f"RENDER_COVER_COORDS: cover_x={self.cover_x}, cover_y={self.cover_y}, cover_w={self.cover_width}, cover_h={self.cover_height}, frame_index={frame_index}")
@@ -1451,7 +1443,7 @@ class GPUVideoRenderer:
                         
                     angle = rotation_angles[frame_index]
                     
-                    # 1. Draw Background (Rotated)
+                    # 1. Draw Background
                     try:
                         self.sample_background(block_grid, thread_block,
                                                (self.frame_gpu, self.background_large_gpu,
@@ -1500,7 +1492,7 @@ class GPUVideoRenderer:
                         except Exception:
                             pass
 
-                    # 6. Draw Assets (Icons)
+                    # 6. Draw Icons
                     # Composite prepared small assets onto the final frame GPU buffer
                     try:
                         if hasattr(self, 'assets_to_blit') and len(self.assets_to_blit) > 0:
