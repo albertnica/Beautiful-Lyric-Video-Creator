@@ -193,19 +193,23 @@ def debug_print(*args, **kwargs):
 
 def find_music_files():
     """
-    Scans the MUSIC_FOLDER for audio files starting with 3 digits (e.g., 001...).
+    Scans the MUSIC_FOLDER for audio files.
     Returns a sorted list of absolute paths.
     """
-    pattern = os.path.join(MUSIC_FOLDER, "[0-9][0-9][0-9]*")
+    pattern = os.path.join(MUSIC_FOLDER, "*")
     entries = glob.glob(pattern)
     audio_exts = {'.flac', '.mp3', '.wav', '.m4a', '.ogg'}
     audio_files = [p for p in entries if os.path.splitext(p.lower())[1] in audio_exts]
-    def _extract_number(path):
-        # Extract the leading number for sorting
+    
+    def _sort_key(path):
+        # Extract the leading number for sorting if present, otherwise use filename
         base = os.path.basename(path)
-        m = re.match(r'^(\d{3})', base)
-        return int(m.group(1)) if m else 999
-    audio_files.sort(key=_extract_number)
+        m = re.match(r'^(\d+)', base)
+        if m:
+            return (0, int(m.group(1)), base.lower())
+        return (1, 0, base.lower())
+        
+    audio_files.sort(key=_sort_key)
     return audio_files
 
 def find_lyrics_file(audio_file):
@@ -1739,7 +1743,7 @@ def main():
     
     music_files = find_music_files()
     if not music_files:
-        debug_print(f"No music files found in '{MUSIC_FOLDER}'.")
+        print(f"[ERROR] No music files found in '{MUSIC_FOLDER}'. Make sure the files have correct extensions (.flac, .mp3, etc.)")
         return
         
     print(f"Found {len(music_files)} music file(s):")
