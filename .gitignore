@@ -1,9 +1,67 @@
-__pycache__
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
 
-.venv
-.mypy_cache
+# Caches & Test artifacts
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-lyrics
-output
-songs
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Logs & Runtime telemetry
+logs
+logs/
+*.log
 temp
+temp/
+
+# User Media Assets (Audio, Lyrics, Video Outputs, Junctions/Symlinks)
+songs
+songs/
+lyrics
+lyrics/
+output
+output/
+*.mp4
+*.mkv
+*.flac
+*.mp3
+*.wav
+*.ogg
+*.m4a
+*.lrc
+
+# Configuration & Secrets
+.env
+.env.local
+.env.*.local
+studio_config.json
+
+# IDE & OS-specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build & Distribution
+build/
+dist/
+*.egg-info/
+
+GEMINI.md
+TODO

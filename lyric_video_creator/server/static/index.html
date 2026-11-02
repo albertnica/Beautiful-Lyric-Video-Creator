@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beautiful Lyric Video Creator • Web Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%2300ff87'/><polygon points='38,28 72,50 38,72' fill='%23050806'/></svg>">
+</head>
+<body>
+
+  <!-- Ambient glowing background aurora matching Namida-Wrapped -->
+  <div class="ambient-bg" aria-hidden="true">
+    <div class="bg-orb orb-green"></div>
+    <div class="bg-orb orb-purple"></div>
+    <div class="bg-orb orb-pink"></div>
+  </div>
+
+  <div class="studio-layout">
+
+    <!-- Top App Header -->
+    <header class="studio-header">
+      <div class="brand">
+        <div class="brand-badge">• LYRIC STUDIO</div>
+        <h1 class="brand-title">Beautiful Lyric Video Creator</h1>
+      </div>
+      <div class="header-actions">
+        <div class="hw-pill" id="lbl-hw-backend" title="Active Compute Accelerator">⚡ Backend: Detecting...</div>
+        <div class="hw-pill" id="lbl-hw-encoder" title="Active FFmpeg Video Encoder">🎞 Encoder: Detecting...</div>
+        <button class="btn-pill btn-shutdown" id="btn-shutdown-studio" onclick="shutdownStudioServer()" title="Stop the background Web Studio server">⏻ Stop Studio</button>
+      </div>
+    </header>
+
+    <!-- Global Live Rendering Progress Banner (Visible across ALL tabs when rendering) -->
+    <section class="render-banner hidden" id="render-banner" aria-live="polite">
+      <div class="banner-top">
+        <div class="banner-status">
+          <span class="pulse-dot" id="banner-dot"></span>
+          <span class="banner-msg" id="banner-msg">Rendering batch...</span>
+        </div>
+        <div class="banner-stats">
+          <span id="banner-counts">0 / 0 tracks • 0 rendered • 0 skipped • 0 failed</span>
+          <button class="btn-stop-render" id="btn-stop-render" onclick="stopVideoCreation()">⏹ Stop After Current</button>
+        </div>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="banner-progress-fill" style="width: 0%;"></div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 1: MAIN STUDIO & OUTPUT EXPLORER ==================== -->
+    <div class="tab-view" id="tab-view-main">
+
+      <!-- Primary Command Deck: The 4 Core Action Buttons -->
+      <section class="action-deck" aria-label="Workspace Actions">
+        <button class="deck-card" id="btn-open-songs" onclick="openFolder('songs')">
+          <div class="deck-icon">🎵</div>
+          <div class="deck-info">
+            <span class="deck-title">Open Songs Folder</span>
+            <span class="deck-meta"><b id="count-songs">0</b> audio files in <code>songs/</code></span>
+          </div>
+          <span class="deck-arrow">↗</span>
+        </button>
+
+        <button class="deck-card" id="btn-open-lyrics" onclick="openFolder('lyrics')">
+          <div class="deck-icon">📝</div>
+          <div class="deck-info">
+            <span class="deck-title">Open Lyrics Folder</span>
+            <span class="deck-meta"><b id="count-lyrics">0</b> .lrc files in <code>lyrics/</code></span>
+          </div>
+          <span class="deck-arrow">↗</span>
+        </button>
+
+        <button class="deck-card deck-launch" id="btn-launch-render" onclick="launchVideoCreation()">
+          <div class="deck-icon">🚀</div>
+          <div class="deck-info">
+            <span class="deck-title" id="lbl-launch-title">Launch Video Creation</span>
+            <span class="deck-meta" id="lbl-launch-sub">Batch render all tracks into <code>output/</code></span>
+          </div>
+          <span class="deck-badge" id="badge-render-state">READY</span>
+        </button>
+
+        <button class="deck-card" id="btn-open-output" onclick="openFolder('output')">
+          <div class="deck-icon">📁</div>
+          <div class="deck-info">
+            <span class="deck-title">Open Output Folder</span>
+            <span class="deck-meta"><b id="count-videos">0</b> rendered MP4s in <code>output/</code></span>
+          </div>
+          <span class="deck-arrow">↗</span>
+        </button>
+      </section>
+
+      <!-- Main Split Workspace: Windows Explorer Output Browser (Left) + Integrated Video Player (Right) -->
+      <main class="studio-workspace">
+
+        <!-- LEFT PANE: Windows Explorer-Style Output Folder View -->
+        <section class="pane pane-explorer" aria-label="Output Videos Explorer">
+          <div class="explorer-window">
+
+            <!-- Window Title Bar -->
+            <div class="terminal-bar">
+              <div class="traffic-lights">
+                <span class="tl-dot red"></span>
+                <span class="tl-dot yellow"></span>
+                <span class="tl-dot green"></span>
+              </div>
+              <div class="terminal-title" id="lbl-explorer-path">explorer://output/</div>
+              <div class="terminal-mode"><span id="lbl-item-count">0 items</span></div>
+            </div>
+
+            <!-- Explorer Ribbon / Toolbar -->
+            <div class="explorer-toolbar">
+              <label class="checkbox-label" title="Select or deselect all visible videos">
+                <input type="checkbox" id="chk-select-all" onchange="toggleSelectAll(this.checked)">
+                <span>Select All</span>
+              </label>
+
+              <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="inp-search" placeholder="Search rendered videos in output..." oninput="onSearchInput(this.value)">
+              </div>
+
+              <select class="explorer-select" id="sel-sort" onchange="onSortChange(this.value)" title="Sort videos by">
+                <option value="date_desc">Sort: Newest First</option>
+                <option value="date_asc">Sort: Oldest First</option>
+                <option value="name_asc">Sort: Name (A → Z)</option>
+                <option value="name_desc">Sort: Name (Z → A)</option>
+                <option value="size_desc">Sort: Size (Largest)</option>
+              </select>
+
+              <div class="view-toggle" role="group" aria-label="Explorer View Mode">
+                <button class="view-btn active" id="btn-view-details" onclick="setExplorerView('details')" title="Details View (Windows Explorer List)">☰ Details</button>
+                <button class="view-btn" id="btn-view-grid" onclick="setExplorerView('grid')" title="Tiles / Grid View">⊞ Tiles</button>
+              </div>
+
+              <button class="btn-toolbar danger" id="btn-delete-selected" onclick="deleteSelectedVideos()" disabled title="Delete selected videos from disk">
+                🗑 Delete Selected (<span id="lbl-selected-count">0</span>)
+              </button>
+
+              <button class="btn-toolbar" onclick="refreshStudioStatus(true)" title="Refresh output directory">↻</button>
+            </div>
+
+            <!-- Details Header Row (shown in 'details' view) -->
+            <div class="explorer-details-header" id="explorer-details-header">
+              <div class="col-check"></div>
+              <div class="col-name">Name</div>
+              <div class="col-date">Date Modified</div>
+              <div class="col-size">Size</div>
+              <div class="col-actions">Actions</div>
+            </div>
+
+            <!-- File List / Grid Container -->
+            <div class="explorer-body" id="explorer-body">
+              <!-- Populated dynamically by app.js -->
+            </div>
+
+            <!-- Explorer Status Footer + Quick Hardware Selectors -->
+            <div class="explorer-footer">
+              <div class="footer-left">
+                <span id="lbl-footer-summary">0 video(s) in output folder</span>
+              </div>
+              <div class="footer-settings">
+                <label for="sel-backend">Compute:</label>
+                <select class="mini-select" id="sel-backend" onchange="syncQuickHardwareToConfig()">
+                  <option value="auto">Auto (Best GPU → CPU)</option>
+                  <option value="cupy">NVIDIA CUDA (CuPy)</option>
+                  <option value="torch">PyTorch GPU (CUDA/ROCm/MPS)</option>
+                  <option value="opencl">OpenCV OpenCL (UMat)</option>
+                  <option value="cpu">CPU Fallback (SIMD)</option>
+                </select>
+                <label for="sel-encoder">Encoder:</label>
+                <select class="mini-select" id="sel-encoder" onchange="syncQuickHardwareToConfig()">
+                  <option value="auto">Auto (HW → libx264)</option>
+                  <option value="nvenc">NVIDIA NVENC</option>
+                  <option value="amf">AMD AMF</option>
+                  <option value="qsv">Intel QSV</option>
+                  <option value="libx264">CPU (libx264)</option>
+                </select>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- RIGHT PANE: Integrated 16:9 Video Player & Inspector -->
+        <section class="pane pane-player" aria-label="Video Preview Player">
+          <div class="player-card">
+
+            <div class="terminal-bar">
+              <div class="traffic-lights">
+                <span class="tl-dot red"></span>
+                <span class="tl-dot yellow"></span>
+                <span class="tl-dot green"></span>
+              </div>
+              <div class="terminal-title" id="lbl-player-filename">No video selected</div>
+              <div class="terminal-mode" id="lbl-player-badge">16:9 HD PLAYER</div>
+            </div>
+
+            <div class="video-stage">
+              <div class="empty-player-state" id="empty-player-state">
+                <div class="empty-icon">🎬</div>
+                <h3>Select a Rendered Video to Play</h3>
+                <p>Click any video in the Output Explorer on the left to play it here, or launch a new batch render.</p>
+              </div>
+              <video id="main-video-player" class="video-element hidden" controls playsinline></video>
+            </div>
+
+            <div class="player-inspector" id="player-inspector">
+              <div class="inspector-meta">
+                <div class="inspector-title" id="lbl-inspector-title">Select a track from the Explorer</div>
+                <div class="inspector-sub" id="lbl-inspector-sub">Rendered videos in <code>output/</code> appear automatically as soon as each song finishes encoding.</div>
+              </div>
+              <div class="inspector-actions">
+                <button class="btn-toolbar" id="btn-play-os" onclick="playCurrentInOSPlayer()" disabled title="Open in Windows Default Media Player">↗ External Player</button>
+                <button class="btn-toolbar danger" id="btn-delete-current" onclick="deleteCurrentVideo()" disabled title="Delete this video from output/">🗑 Delete Video</button>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+      </main>
+
+    </div>
+
+    <!-- ==================== TAB 2: TRACKS & SINGLE RENDER ==================== -->
+    <div class="tab-view hidden" id="tab-view-tracks">
+      <div class="tracks-view-container">
+
+        <!-- Top Header & Folder Manager Bar -->
+        <div class="workspace-folders-bar">
+          <div class="folder-box">
+            <div class="folder-label">
+              <span>🎵 Songs Folder</span>
+              <span id="badge-songs-status" class="spec-chip">Active</span>
+            </div>
+            <div class="folder-path-display" id="display-songs-path">songs/</div>
+            <div class="folder-btn-group">
+              <button class="btn-folder-action" onclick="promptChangeFolder('songs')">Change Path</button>
+              <button class="btn-folder-action" onclick="resetFolderDefault('songs')">Default</button>
+              <button class="btn-folder-action" onclick="openFolder('songs')">Explorer ↗</button>
+            </div>
+          </div>
+
+          <div class="folder-box">
+            <div class="folder-label">
+              <span>📝 Lyrics Folder</span>
+              <span id="badge-lyrics-status" class="spec-chip">Active</span>
+            </div>
+            <div class="folder-path-display" id="display-lyrics-path">lyrics/</div>
+            <div class="folder-btn-group">
+              <button class="btn-folder-action" onclick="promptChangeFolder('lyrics')">Change Path</button>
+              <button class="btn-folder-action" onclick="resetFolderDefault('lyrics')">Default</button>
+              <button class="btn-folder-action" onclick="openFolder('lyrics')">Explorer ↗</button>
+            </div>
+          </div>
+
+          <div class="folder-box">
+            <div class="folder-label">
+              <span>📁 Output Folder</span>
+              <span id="badge-output-status" class="spec-chip">Active</span>
+            </div>
+            <div class="folder-path-display" id="display-output-path">output/</div>
+            <div class="folder-btn-group">
+              <button class="btn-folder-action" onclick="promptChangeFolder('output')">Change Path</button>
+              <button class="btn-folder-action" onclick="resetFolderDefault('output')">Default</button>
+              <button class="btn-folder-action" onclick="openFolder('output')">Explorer ↗</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tracks Window -->
+        <div class="tracks-table-window">
+          <div class="tracks-toolbar">
+            <div class="tracks-search-box">
+              <span>🔍</span>
+              <input type="text" id="tracks-search-input" placeholder="Search tracks by title, artist, or filename..." oninput="onTracksSearchInput(this.value)">
+            </div>
+            <div class="tracks-toolbar-actions" style="display:flex;gap:10px;align-items:center;">
+              <span class="spec-chip" id="lbl-tracks-summary">0 tracks discovered</span>
+              <button class="btn-toolbar" onclick="loadTracksList(true)">↻ Refresh Tracks</button>
+              <button class="btn-save-config" onclick="launchVideoCreation()" style="padding:6px 14px;font-size:12px;">🚀 Batch Render All</button>
+            </div>
+          </div>
+
+          <div class="tracks-list-header">
+            <div>Art</div>
+            <div>Title / Artist</div>
+            <div>Duration</div>
+            <div>LRC File Binding</div>
+            <div>Preset</div>
+            <div>Action</div>
+          </div>
+
+          <div class="tracks-list" id="tracks-body">
+            <!-- Populated dynamically by app.js -->
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ==================== TAB 3: CONFIGURATION & VISUAL PARAMETERS ==================== -->
+    <div class="tab-view hidden" id="tab-view-config">
+      <div class="config-container">
+
+        <!-- Configuration Header Banner -->
+        <div class="config-header-card">
+          <div class="config-header-info">
+            <h2>Engine &amp; Visual Configuration</h2>
+            <p>Customize resolution, framerate, bitrates, hardware acceleration, and glow/blur shaders. Defaults match your original script profile (<code>1920×1080 @ 20 FPS</code>, <code>8000k</code> video, <code>320k</code> audio).</p>
+          </div>
+          <div class="config-header-actions">
+            <button type="button" class="btn-toolbar" id="btn-reset-config" onclick="resetStudioConfig()">↺ Reset to Defaults</button>
+            <button type="button" class="btn-save-config" id="btn-save-config" onclick="saveStudioConfig()">💾 Save &amp; Apply Changes</button>
+          </div>
+        </div>
+
+        <!-- CARD 0: Standard Configuration Presets -->
+        <section class="config-card" style="margin-bottom: 2px;">
+          <div class="config-card-title">🎨 Standard Video &amp; Aesthetic Presets (1-Click Switch)</div>
+          <p class="field-hint" style="margin-top:-6px;margin-bottom:8px;">Select a standard configuration preset to instantly update resolution, framerate, video bitrates, and glow parameters.</p>
+          <div class="presets-grid" id="presets-grid">
+            <!-- Populated dynamically by app.js -->
+          </div>
+        </section>
+
+        <!-- 4-Card Settings Grid -->
+        <div class="config-grid">
+
+          <!-- CARD 1: Video & Audio Output -->
+          <section class="config-card">
+            <div class="config-card-title">🎞 Video &amp; Audio Output Profile</div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sel-res-preset">Resolution Preset</label>
+                <select id="sel-res-preset" class="config-input" onchange="onResolutionPresetChange(this.value)">
+                  <option value="1920x1080">1080p Full HD (1920 × 1080) — Default</option>
+                  <option value="1280x720">720p HD (1280 × 720)</option>
+                  <option value="2560x1440">1440p QHD (2560 × 1440)</option>
+                  <option value="3840x2160">4K UHD (3840 × 2160)</option>
+                  <option value="1080x1920">Vertical 9:16 (1080 × 1920)</option>
+                  <option value="custom">Custom Resolution</option>
+                </select>
+                <span class="field-hint">Select a standard aspect ratio or type custom dimensions below.</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-fps">Frame Rate (FPS)</label>
+                <input type="number" id="cfg-fps" class="config-input" min="1" max="240" step="1" value="20">
+                <span class="field-hint">Default: <code>20</code> FPS (try <code>30</code> or <code>60</code> for smoother motion).</span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cfg-width">Canvas Width (px)</label>
+                <input type="number" id="cfg-width" class="config-input" min="320" max="7680" step="2" value="1920" oninput="syncPresetDropdown()">
+                <span class="field-hint">Default: <code>1920</code> px (even integer for YUV420p).</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-height">Canvas Height (px)</label>
+                <input type="number" id="cfg-height" class="config-input" min="240" max="4320" step="2" value="1080" oninput="syncPresetDropdown()">
+                <span class="field-hint">Default: <code>1080</code> px (even integer for YUV420p).</span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cfg-video_bitrate">Video Bitrate</label>
+                <input type="text" id="cfg-video_bitrate" class="config-input" value="8000k" placeholder="8000k">
+                <span class="field-hint">Default: <code>8000k</code> (e.g. <code>5000k</code>, <code>12000k</code>, <code>16M</code>).</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-audio_bitrate">Audio Bitrate (AAC)</label>
+                <input type="text" id="cfg-audio_bitrate" class="config-input" value="320k" placeholder="320k">
+                <span class="field-hint">Default: <code>320k</code> (e.g. <code>192k</code>, <code>256k</code>, <code>320k</code>).</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- CARD 2: Hardware & Pipeline -->
+          <section class="config-card">
+            <div class="config-card-title">⚡ Hardware Acceleration &amp; Pipeline</div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cfg-backend">Compute Backend</label>
+                <select id="cfg-backend" class="config-input">
+                  <option value="auto">auto — Best Available (CuPy → Torch → OpenCL → CPU)</option>
+                  <option value="cupy">cupy — NVIDIA CUDA Custom Kernel</option>
+                  <option value="torch">torch — PyTorch GPU (CUDA / ROCm / Apple MPS)</option>
+                  <option value="opencl">opencl — OpenCV Transparent API (UMat)</option>
+                  <option value="cpu">cpu — Vectorized NumPy/OpenCV SIMD</option>
+                </select>
+                <span class="field-hint">Default: <code>auto</code>. Controls how frames and blurs are composited.</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-encoder">FFmpeg Video Encoder</label>
+                <select id="cfg-encoder" class="config-input">
+                  <option value="auto">auto — Best Hardware Encoder → libx264</option>
+                  <option value="nvenc">nvenc — NVIDIA h264_nvenc</option>
+                  <option value="amf">amf — AMD h264_amf</option>
+                  <option value="qsv">qsv — Intel QuickSync h264_qsv</option>
+                  <option value="libx264">libx264 — Software CPU x264</option>
+                </select>
+                <span class="field-hint">Default: <code>auto</code>. Automatically falls back if unavailable.</span>
+              </div>
+            </div>
+
+            <div class="form-row three-cols">
+              <div class="form-group">
+                <label for="cfg-block_size">Frame Block Size</label>
+                <input type="number" id="cfg-block_size" class="config-input" min="10" max="2000" step="10" value="200">
+                <span class="field-hint">Default: <code>200</code> frames/chunk.</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-ping_pong_buffers">Ping-Pong Buffers</label>
+                <input type="number" id="cfg-ping_pong_buffers" class="config-input" min="2" max="16" step="1" value="3">
+                <span class="field-hint">Default: <code>3</code> ring buffers.</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-queue_max">Encoder Queue Max</label>
+                <input type="number" id="cfg-queue_max" class="config-input" min="4" max="512" step="4" value="64">
+                <span class="field-hint">Default: <code>64</code> frames.</span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <label class="checkbox-label config-chk">
+                <input type="checkbox" id="cfg-debug">
+                <span>Enable Verbose Debug Logging (writes per-frame diagnostics to <code>logs/</code>)</span>
+              </label>
+            </div>
+          </section>
+
+          <!-- CARD 3: Lyrics Layout & Background Motion -->
+          <section class="config-card">
+            <div class="config-card-title">📝 Lyrics Layout &amp; Background Motion</div>
+
+            <div class="form-row three-cols">
+              <div class="form-group">
+                <label for="cfg-max_lyrics_length">Max Chars / Line</label>
+                <input type="number" id="cfg-max_lyrics_length" class="config-input" min="15" max="120" step="1" value="48">
+                <span class="field-hint">Default: <code>48</code> characters.</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-default_last_line_duration">Last Line Hold (s)</label>
+                <input type="number" id="cfg-default_last_line_duration" class="config-input" min="0.5" max="30" step="0.5" value="5.0">
+                <span class="field-hint">Default: <code>5.0</code> seconds.</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-left_margin">Lyrics Left Margin (px)</label>
+                <input type="number" id="cfg-left_margin" class="config-input" min="0" max="3840" step="10" value="560">
+                <span class="field-hint">Default: <code>560</code> px.</span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cfg-background_size">Rotating Background Size (px)</label>
+                <input type="number" id="cfg-background_size" class="config-input" min="512" max="8192" step="50" value="2600">
+                <span class="field-hint">Default: <code>2600</code> px (oversized cover art canvas to prevent corner clipping).</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-rotation_speed">Rotation Speed (°/frame)</label>
+                <input type="number" id="cfg-rotation_speed" class="config-input" min="-10" max="10" step="0.05" value="-0.1">
+                <span class="field-hint">Default: <code>-0.1</code> deg/frame (set <code>0</code> for static background).</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- CARD 4: Glow, Blur & Color Aesthetics -->
+          <section class="config-card">
+            <div class="config-card-title">✨ Glow, Blur &amp; Color Aesthetics</div>
+
+            <div class="form-row three-cols">
+              <div class="form-group">
+                <label for="cfg-blur_strength">BG Blur Kernel (odd)</label>
+                <input type="number" id="cfg-blur_strength" class="config-input" min="3" max="999" step="2" value="501">
+                <span class="field-hint">Default: <code>501</code> px.</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-glow_blur_ksize">Glow Blur Kernel (odd)</label>
+                <input type="number" id="cfg-glow_blur_ksize" class="config-input" min="3" max="351" step="2" value="111">
+                <span class="field-hint">Default: <code>111</code> px.</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-glow_intensity_base">Lyric Glow Intensity</label>
+                <input type="number" id="cfg-glow_intensity_base" class="config-input" min="0" max="5" step="0.05" value="1.25">
+                <span class="field-hint">Default: <code>1.25</code>.</span>
+              </div>
+            </div>
+
+            <div class="form-row three-cols">
+              <div class="form-group">
+                <label for="cfg-fixed_text_glow_intensity">Header Text Glow</label>
+                <input type="number" id="cfg-fixed_text_glow_intensity" class="config-input" min="0" max="5" step="0.05" value="0.7">
+                <span class="field-hint">Default: <code>0.7</code>.</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-assets_glow_intensity">Cover/Assets Glow</label>
+                <input type="number" id="cfg-assets_glow_intensity" class="config-input" min="0" max="5" step="0.05" value="0.45">
+                <span class="field-hint">Default: <code>0.45</code>.</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-alpha_min">Inactive Lyric Alpha</label>
+                <input type="number" id="cfg-alpha_min" class="config-input" min="0" max="255" step="1" value="51">
+                <span class="field-hint">Default: <code>51</code> (0–255).</span>
+              </div>
+            </div>
+
+            <div class="form-row four-cols">
+              <div class="form-group">
+                <label for="cfg-glow_pulse_amp">Pulse Amp</label>
+                <input type="number" id="cfg-glow_pulse_amp" class="config-input" min="0" max="2" step="0.05" value="0.2">
+                <span class="field-hint">Def: <code>0.2</code></span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-glow_pulse_freq">Pulse Freq (Hz)</label>
+                <input type="number" id="cfg-glow_pulse_freq" class="config-input" min="0" max="10" step="0.1" value="0.5">
+                <span class="field-hint">Def: <code>0.5</code></span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-glow_edge_px">Edge Glow (px)</label>
+                <input type="number" id="cfg-glow_edge_px" class="config-input" min="1" max="200" step="1" value="30">
+                <span class="field-hint">Def: <code>30</code></span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-glow_boost">Glow Boost</label>
+                <input type="number" id="cfg-glow_boost" class="config-input" min="0.1" max="10" step="0.1" value="1.6">
+                <span class="field-hint">Def: <code>1.6</code></span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cfg-min_glow_sat">Min Glow Saturation (0–1)</label>
+                <input type="number" id="cfg-min_glow_sat" class="config-input" min="0" max="1" step="0.05" value="0.6">
+                <span class="field-hint">Default: <code>0.6</code>.</span>
+              </div>
+              <div class="form-group">
+                <label for="cfg-min_glow_val">Min Glow Brightness (0–1)</label>
+                <input type="number" id="cfg-min_glow_val" class="config-input" min="0" max="1" step="0.05" value="0.75">
+                <span class="field-hint">Default: <code>0.75</code>.</span>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== BOTTOM TAB NAVIGATION BAR ==================== -->
+    <nav class="bottom-tab-bar" aria-label="Studio Navigation">
+      <div class="bottom-nav-tabs" role="tablist">
+        <button class="bottom-tab-btn active" id="nav-tab-main" role="tab" aria-selected="true" onclick="switchStudioTab('main')">
+          <span class="tab-icon">🎬</span>
+          <span>Output Videos Explorer</span>
+        </button>
+        <button class="bottom-tab-btn" id="nav-tab-tracks" role="tab" aria-selected="false" onclick="switchStudioTab('tracks')">
+          <span class="tab-icon">🎵</span>
+          <span>Tracks &amp; Single Render</span>
+        </button>
+        <button class="bottom-tab-btn" id="nav-tab-config" role="tab" aria-selected="false" onclick="switchStudioTab('config')">
+          <span class="tab-icon">⚙️</span>
+          <span>Configuration &amp; Presets</span>
+        </button>
+      </div>
+      <div class="bottom-nav-meta">
+        <span class="profile-pill" id="lbl-active-profile">Active Profile: 1920×1080 • 20 FPS • 8000k • 320k</span>
+      </div>
+    </nav>
+
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="studio-toast hidden" id="studio-toast" role="status" aria-live="polite"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
