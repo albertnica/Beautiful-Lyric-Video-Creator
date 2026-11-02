@@ -167,3 +167,38 @@ def test_single_render_endpoint_and_apostrophe_handling(client: TestClient, tmp_
         client.post("/api/folders/set", json={"target": "lyrics", "path": "__default__"})
         client.post("/api/folders/set", json={"target": "output", "path": "__default__"})
 
+
+def test_open_folder_and_video_external_endpoints(client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Verify open-folder and play-external endpoints trigger native OS process launches without exceptions."""
+    import subprocess
+
+    launched_cmds: list[list[str] | str] = []
+
+    def mock_popen(cmd: list[str] | str, **kwargs: object) -> object:
+        launched_cmds.append(cmd)
+        class DummyProc:
+            pid = 99999
+        return DummyProc()
+
+    monkeypatch.setattr(subprocess, "Popen", mock_popen)
+
+    # 1. Test opening output folder
+    res_out = client.post("/api/open-folder", json={"target": "output"})
+    assert res_out.status_code == 200
+    out_data = res_out.json()
+    assert out_data["status"] == "ok"
+    assert out_data["target"] == "output"
+    assert len(launched_cmds) >= 1
+    if sys.platform == "win32":
+        assert any("explorer.exe" in str(c) for c in launched_cmds)
+
+    # 2. Test opening songs folder
+    res_songs = client.post("/api/open-folder", json={"target": "songs"})
+    assert res_songs.status_code == 200
+    assert res_songs.json()["target"] == "songs"
+
+    # 3. Test invalid folder target
+    res_bad = client.post("/api/open-folder", json={"target": "invalid_folder"})
+    assert res_bad.status_code == 422
+
+

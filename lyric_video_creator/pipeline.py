@@ -38,12 +38,7 @@ from lyric_video_creator.utils import get_logger, setup_directories
 
 
 def probe_video_resolution(video_path: str | Path) -> tuple[int, int] | None:
-    """Probe the width and height of an existing .mp4 video using ffprobe.
-
-    Why dimension-aware skip checking:
-    Blindly skipping if `os.path.exists(out_path)` prevents re-rendering when the user switches
-    between standard 16:9 landscape (1920x1080) and 9:16 vertical (1080x1920) presets.
-    """
+    """Probe the width and height of an existing .mp4 video using ffprobe."""
     try:
         res = subprocess.check_output(
             [
@@ -302,29 +297,21 @@ def run_batch_pipeline(
                 base = os.path.splitext(track_name)[0]
                 out_path = os.path.join(str(config.output_folder), f"{base}.mp4")
 
-                if os.path.exists(out_path):
-                    existing_res = probe_video_resolution(out_path)
-                    if existing_res is not None and existing_res == (config.width, config.height):
-                        logger.info(
-                            "Output already exists with matching %dx%d resolution: %s; skipping.",
-                            config.width,
-                            config.height,
-                            out_path,
-                        )
-                        skipped += 1
-                        log_file.write(f"[ALREADY PROCESSED] {track_name}\n")
-                        log_file.flush()
-                        _notify(i, track_name, f"Skipped existing ({config.width}x{config.height}): {track_name}")
-                        continue
-                    else:
-                        old_desc = f"{existing_res[0]}x{existing_res[1]}" if existing_res else "unknown format"
-                        logger.info(
-                            "Existing video has %s; re-rendering to requested %dx%d: %s",
-                            old_desc,
-                            config.width,
-                            config.height,
-                            out_path,
-                        )
+                # Skip if video already exists in output folder, regardless of format, container, or resolution
+                existing_video_path: str | None = None
+                for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi"):
+                    candidate = os.path.join(str(config.output_folder), f"{base}{ext}")
+                    if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+                        existing_video_path = candidate
+                        break
+
+                if existing_video_path is not None:
+                    logger.info("Output video already exists: %s; skipping.", existing_video_path)
+                    skipped += 1
+                    log_file.write(f"[ALREADY PROCESSED] {track_name}\n")
+                    log_file.flush()
+                    _notify(i, track_name, f"Skipped existing: {track_name}")
+                    continue
 
                 success = renderer.render_video(audio_file, lrc_file, out_path)
                 if success:

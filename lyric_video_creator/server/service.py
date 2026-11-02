@@ -268,14 +268,30 @@ class StudioService:
             )
 
     def open_folder_in_explorer(self, target: FolderTarget) -> Path:
-        """Launch the native OS file explorer focused on `target`."""
+        """Launch the native OS file explorer focused on `target`.
+
+        Why direct subprocess explorer.exe over os.startfile on Windows:
+        When running as a background Uvicorn daemon or windowless process (pythonw.exe),
+        os.startfile relies on ShellExecuteW from worker threads without an STA COM apartment
+        or interactive window handle. Windows Explorer silently ignores such requests due to
+        foreground lock restrictions. Spawning 'explorer.exe <path>' explicitly invokes the
+        native Windows shell process, ensuring the folder window is reliably created or focused.
+        """
         folder = self.resolve_folder_path(target)
-        if sys.platform == "win32" and hasattr(os, "startfile"):
-            os.startfile(str(folder))
+        norm_path = os.path.normpath(str(folder.resolve()))
+        logger = get_logger()
+        logger.info("Opening '%s' folder in file explorer: %s", target, norm_path)
+        if sys.platform == "win32":
+            try:
+                subprocess.Popen(["explorer.exe", norm_path])
+            except Exception as exc:
+                logger.warning("subprocess explorer.exe failed (%s); falling back to os.startfile", exc)
+                if hasattr(os, "startfile"):
+                    os.startfile(norm_path)
         elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(folder)])
+            subprocess.Popen(["open", norm_path])
         else:
-            subprocess.Popen(["xdg-open", str(folder)])
+            subprocess.Popen(["xdg-open", norm_path])
         return folder
 
     def _validate_output_video_path(self, filename: str) -> Path:
@@ -290,16 +306,29 @@ class StudioService:
         return candidate
 
     def open_video_external(self, filename: str) -> Path:
-        """Open a rendered `.mp4` video in the OS default media player."""
+        """Open a rendered `.mp4` video in the OS default media player.
+
+        Why cmd start over os.startfile:
+        Spawning 'start \"\" \"<path>\"' via cmd.exe activates Windows registered file
+        associations with an interactive process token, bypassing windowless thread restrictions.
+        """
         video_path = self._validate_output_video_path(filename)
         if not video_path.is_file():
             raise FileNotFoundError(f"Video not found: {filename}")
-        if sys.platform == "win32" and hasattr(os, "startfile"):
-            os.startfile(str(video_path))
+        norm_path = os.path.normpath(str(video_path.resolve()))
+        logger = get_logger()
+        logger.info("Opening video in external player: %s", norm_path)
+        if sys.platform == "win32":
+            try:
+                subprocess.Popen(f'start "" "{norm_path}"', shell=True)
+            except Exception as exc:
+                logger.warning("cmd start failed (%s); falling back to os.startfile", exc)
+                if hasattr(os, "startfile"):
+                    os.startfile(norm_path)
         elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(video_path)])
+            subprocess.Popen(["open", norm_path])
         else:
-            subprocess.Popen(["xdg-open", str(video_path)])
+            subprocess.Popen(["xdg-open", norm_path])
         return video_path
 
     def list_rendered_videos(self) -> list[VideoItemModel]:
@@ -539,6 +568,12 @@ class StudioService:
                             f"Completed: {self._progress.processed} rendered, "
                             f"{self._progress.skipped} skipped, {self._progress.failed} failed."
                         )
+                        if self._progress.processed > 0:
+                            try:
+                                self.open_folder_in_explorer("output")
+                            except Exception as exc:
+                                logger = get_logger()
+                                logger.warning("Could not auto-open output directory: %s", exc)
 
         self._render_thread = Thread(target=_worker, daemon=True, name="BatchVideoRenderWorker")
         self._render_thread.start()
@@ -650,6 +685,10 @@ class StudioService:
                         self._progress.processed = 1
                         self._progress.percent = 100.0
                         self._progress.message = f"Completed: '{output_path.name}' saved to output/."
+                        try:
+                            self.open_folder_in_explorer("output")
+                        except Exception as exc:
+                            logger.warning("Could not auto-open output directory: %s", exc)
                     else:
                         self._progress.failed = 1
                         self._progress.message = f"Rendering failed for '{audio_path.name}'. Check logs."

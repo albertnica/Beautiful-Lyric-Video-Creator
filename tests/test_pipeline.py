@@ -35,6 +35,7 @@ from lyric_video_creator import (
     parse_lyrics,
     prepare_scene,
     resolve_video_encoder,
+    run_batch_pipeline,
     sanitize_text,
     strip_title_extra,
 )
@@ -384,5 +385,54 @@ def test_vertical_tiktok_layout_and_bounding_boxes() -> None:
         assert sprite.y > scene.cover_y + scene.cover_height
         assert sprite.text_left_x >= 0
         assert sprite.text_left_x + sprite.text_width <= cfg.width
+
+
+def test_batch_pipeline_skips_existing_video_regardless_of_format(tmp_path: Path) -> None:
+    """Verify that batch rendering skips tracks that already exist in output, even with differing format/dimensions."""
+    songs_dir = tmp_path / "songs"
+    lyrics_dir = tmp_path / "lyrics"
+    output_dir = tmp_path / "output"
+    logs_dir = tmp_path / "logs"
+
+    songs_dir.mkdir()
+    lyrics_dir.mkdir()
+    output_dir.mkdir()
+    logs_dir.mkdir()
+
+    # Create dummy song and lyric
+    audio_path = songs_dir / "001 - Existing Track.wav"
+    audio_path.write_bytes(b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00D\xac\x00\x00\x88X\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00")
+    (lyrics_dir / "001 - Existing Track.lrc").write_text("[00:01.00]Test\n", encoding="utf-8")
+
+    # Pre-create output video (dummy bytes, e.g. simulating a 16:9 1920x1080 render)
+    out_video = output_dir / "001 - Existing Track.mp4"
+    initial_content = b"\x00\x00\x00\x18ftypmp42" + b"OLD_VIDEO_CONTENT" * 100
+    out_video.write_bytes(initial_content)
+
+    cfg = RenderConfig(
+        music_folder=songs_dir,
+        lyrics_folder=lyrics_dir,
+        output_folder=output_dir,
+        logs_folder=logs_dir,
+        width=1080,   # User requests 9:16 vertical render
+        height=1920,
+        fps=30,
+        backend="cpu",
+    )
+
+    notifications: list[dict[str, object]] = []
+    def on_progress(info: dict[str, object]) -> None:
+        notifications.append(info)
+
+    ret = run_batch_pipeline(config=cfg, progress_callback=on_progress)
+    assert ret == 0
+
+    # Ensure video was skipped and not overwritten
+    assert out_video.is_file()
+    assert out_video.read_bytes() == initial_content
+
+    # Verify notification telemetry recorded skip
+    assert any("Skipped existing" in str(n.get("message")) for n in notifications)
+
 
 
